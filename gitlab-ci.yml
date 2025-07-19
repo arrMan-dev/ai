@@ -1,0 +1,80 @@
+# .gitlab-ci.yml
+
+# Define the default image to use for all jobs if not specified otherwise
+default:
+  image: docker:latest
+  tags:
+    - docker # Ensures a runner with Docker capabilities is used
+
+# Define stages of the pipeline
+stages:
+  - build
+  - deploy # Or test, then deploy
+
+# Define variables that can be used across jobs
+variables:
+  # Image name for your Docker container
+  # CI_REGISTRY is a pre-defined GitLab CI/CD variable for your project's registry
+  CONTAINER_IMAGE: $CI_REGISTRY/$CI_PROJECT_PATH:$CI_COMMIT_REF_SLUG
+  CONTAINER_IMAGE_LATEST: $CI_REGISTRY/$CI_PROJECT_PATH:latest
+
+# --- Build Stage ---
+build_image:
+  stage: build
+  # Use a service container for Docker-in-Docker (dind) if building images
+  services:
+    - docker:dind
+  script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    - docker build -t $CONTAINER_IMAGE .
+    - docker push $CONTAINER_IMAGE
+    # Optionally push a 'latest' tag for easier deployment
+    - docker tag $CONTAINER_IMAGE $CONTAINER_IMAGE_LATEST
+    - docker push $CONTAINER_IMAGE_LATEST
+  # Only run on pushes to specific branches (e.g., main or master)
+  # or when a tag is created
+  only:
+    - main
+    - master
+    - tags
+
+# --- Deploy Stage ---
+# This is a conceptual deployment. Replace with your actual deployment method.
+# Options include: SSH, Kubernetes, cloud-specific tools (e.g., gcloud, aws cli)
+
+deploy_production:
+  stage: deploy
+  image: alpine/git # A small image with git and ssh client (you might need more tools)
+  before_script:
+    # Install openssh-client if not available in the image
+    - apk add --no-cache openssh-client
+    # Add your SSH private key to the agent
+    - eval $(ssh-agent -s)
+    - echo "$SSH_PRIVATE_KEY" | ssh-add - # SSH_PRIVATE_KEY should be a CI/CD variable
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+    # Disable strict host key checking for non-interactive login (use with caution)
+    - ssh-keyscan -H $SSH_HOST > ~/.ssh/known_hosts
+    - chmod 600 ~/.ssh/known_hosts
+  script:
+    - echo "Deploying application to $SSH_HOST..."
+    # SSH into your server and pull/run the latest Docker image
+    # Replace user@your_server_ip with your actual deployment details
+    - ssh $SSH_USER@$SSH_HOST "
+        docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY &&
+        docker pull $CONTAINER_IMAGE_LATEST &&
+        docker stop my-rag-app || true && # Stop if running
+        docker rm my-rag-app || true &&   # Remove if exists
+        docker run -d --name my-rag-app -p 80:5000 \
+        -e MONGO_URI=\"$MONGO_URI\" \
+        -e GOOGLE_API_KEY=\"$GEMINI_API_KEY\" \
+        -e DB_NAME=\"$DB_NAME\" \
+        -e COLLECTION_NAME=\"$COLLECTION_NAME\" \
+        -e VECTOR_INDEX_NAME=\"$VECTOR_SEARCH_INDEX_NAME\" \
+        $CONTAINER_IMAGE_LATEST"
+    - echo "Deployment complete!"
+  # Only run for the main branch
+  only:
+    - main
+    - master
+  environment: production # Mark this job as deploying to the 'production' environment
