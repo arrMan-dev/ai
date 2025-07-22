@@ -1,8 +1,8 @@
 # Define the default image to use for all jobs if not specified otherwise
 default:
   image: docker:latest
-  tags:
-    - docker # Ensures a runner with Docker capabilities is used
+#  tags:
+#    - docker # Ensures a runner with Docker capabilities is used
 
 # Define stages of the pipeline
 stages:
