@@ -65,10 +65,10 @@ deploy_production:
         docker rm my-rag-app || true &&   # Remove if exists
         docker run -d --name my-rag-app -p 80:5000 \
         -e MONGO_URI=\"$MONGO_URI\" \
-        -e GOOGLE_API_KEY=\"$GEMINI_API_KEY\" \
+        -e GEMINI_API_KEY=\"$GEMINI_API_KEY\" \
         -e DB_NAME=\"$DB_NAME\" \
         -e COLLECTION_NAME=\"$COLLECTION_NAME\" \
-        -e VECTOR_INDEX_NAME=\"$VECTOR_SEARCH_INDEX_NAME\" \
+        -e VECTOR_SEARCH_INDEX_NAME=\"$VECTOR_SEARCH_INDEX_NAME\" \
         $CONTAINER_IMAGE_LATEST"
     - echo "Deployment complete!"
   # Only run for the main branch
