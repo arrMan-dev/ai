@@ -1,78 +1,80 @@
-# Define the default image to use for all jobs if not specified otherwise
-default:
-  image: docker:latest
-#  tags:
-#    - docker # Ensures a runner with Docker capabilities is used
+# .gitlab-ci.yml
+
+# No default image defined at the top level,
+# as the runner itself is expected to have Docker for the build step.
+# If you need an image for other stages (like deploy), define it per job.
 
 # Define stages of the pipeline
 stages:
   - build
-  - deploy # Or test, then deploy
+  - deploy
 
-# Define variables that can be used across jobs
+# Define variables for the container image
 variables:
-  # Image name for your Docker container
-  # CI_REGISTRY is a pre-defined GitLab CI/CD variable for your project's registry
-  CONTAINER_IMAGE: $CI_REGISTRY/$CI_PROJECT_PATH:$CI_COMMIT_REF_SLUG
-  CONTAINER_IMAGE_LATEST: $CI_REGISTRY/$CI_PROJECT_PATH:latest
+  # This image name will essentially be just project_path/repository_name.
+  # When pushed without an explicit tag, Docker defaults to 'latest'.
+  # Alternatively, you could use $CI_COMMIT_SHORT_SHA for a unique, untagged image ID.
+  CONTAINER_REPOSITORY: $CI_REGISTRY/$CI_PROJECT_PATH
 
 # --- Build Stage ---
 build_image:
   stage: build
-  # Use a service container for Docker-in-Docker (dind) if building images
-  services:
-    - docker:dind
+  # No 'image' or 'services' here, assuming runner has Docker installed.
+  # The 'tags' keyword here is for the runner, not the Docker image.
+  # Ensure your runner is registered with a tag like 'docker-host' or 'self-hosted'
+  # if you have specific runners configured for this.
+  tags:
+    - shell-executor # Example tag for a runner configured with shell executor and Docker access.
+                     # Or a specific tag you assigned to your self-hosted Docker-enabled runner.
   script:
+    - echo "Logging into GitLab Container Registry..."
     - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
-    - docker build -t $CONTAINER_IMAGE .
-    - docker push $CONTAINER_IMAGE
-    # Optionally push a 'latest' tag for easier deployment
-    - docker tag $CONTAINER_IMAGE $CONTAINER_IMAGE_LATEST
-    - docker push $CONTAINER_IMAGE_LATEST
-  # Only run on pushes to specific branches (e.g., main or master)
-  # or when a tag is created
+    - echo "Building Docker image: $CONTAINER_REPOSITORY"
+    # Build without explicitly specifying a tag. Docker often defaults to 'latest'.
+    # Or, if you want a simple unique identifier without a 'tag' keyword:
+    # - docker build -t $CONTAINCONTAINER_REPOSITORY:$CI_COMMIT_SHORT_SHA .
+    # - docker push $CONTAINER_REPOSITORY:$CI_COMMIT_SHORT_SHA
+    - docker build -t $CONTAINER_REPOSITORY .
+    - echo "Pushing Docker image to registry..."
+    - docker push $CONTAINER_REPOSITORY
+    - echo "Image built and pushed successfully."
   only:
     - main
     - master
-    - tags
+    - tags # You can keep this for triggering builds on tags if desired
 
 # --- Deploy Stage ---
-# This is a conceptual deployment. Replace with your actual deployment method.
-# Options include: SSH, Kubernetes, cloud-specific tools (e.g., gcloud, aws cli)
-
 deploy_production:
   stage: deploy
-  image: alpine/git # A small image with git and ssh client (you might need more tools)
+  image: alpine/git # Use a specific image for deployment if your runner doesn't have SSH tools
+  tags:
+    - shell-executor # Use the same runner tag as your build job, or a dedicated deploy runner
   before_script:
-    # Install openssh-client if not available in the image
     - apk add --no-cache openssh-client
-    # Add your SSH private key to the agent
     - eval $(ssh-agent -s)
-    - echo "$SSH_PRIVATE_KEY" | ssh-add - # SSH_PRIVATE_KEY should be a CI/CD variable
+    - echo "$SSH_PRIVATE_KEY" | ssh-add -
     - mkdir -p ~/.ssh
     - chmod 700 ~/.ssh
-    # Disable strict host key checking for non-interactive login (use with caution)
     - ssh-keyscan -H $SSH_HOST > ~/.ssh/known_hosts
     - chmod 600 ~/.ssh/known_hosts
   script:
     - echo "Deploying application to $SSH_HOST..."
     # SSH into your server and pull/run the latest Docker image
-    # Replace user@your_server_ip with your actual deployment details
+    # Note: We're pulling $CONTAINER_REPOSITORY which, when pushed without a tag, defaults to ':latest'
     - ssh $SSH_USER@$SSH_HOST "
         docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY &&
-        docker pull $CONTAINER_IMAGE_LATEST &&
-        docker stop my-rag-app || true && # Stop if running
-        docker rm my-rag-app || true &&   # Remove if exists
+        docker pull $CONTAINER_REPOSITORY && # Pulls the default tagged image (e.g., 'latest')
+        docker stop my-rag-app || true &&
+        docker rm my-rag-app || true &&
         docker run -d --name my-rag-app -p 80:5000 \
         -e MONGO_URI=\"$MONGO_URI\" \
         -e GEMINI_API_KEY=\"$GEMINI_API_KEY\" \
         -e DB_NAME=\"$DB_NAME\" \
         -e COLLECTION_NAME=\"$COLLECTION_NAME\" \
         -e VECTOR_SEARCH_INDEX_NAME=\"$VECTOR_SEARCH_INDEX_NAME\" \
-        $CONTAINER_IMAGE_LATEST"
+        $CONTAINER_REPOSITORY" # No explicit tag needed, Docker resolves to 'latest'
     - echo "Deployment complete!"
-  # Only run for the main branch
   only:
     - main
     - master
-  environment: production # Mark this job as deploying to the 'production' environment
+  environment: production
