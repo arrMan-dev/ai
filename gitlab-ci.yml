@@ -1,5 +1,3 @@
-# .gitlab-ci.yml
-
 # Define the default image to use for all jobs if not specified otherwise
 default:
   image: docker:latest
