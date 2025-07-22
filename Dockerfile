@@ -1,7 +1,6 @@
-#FROM ubuntu:latest
-#LABEL authors="arrismanduma"
-#
-#ENTRYPOINT ["top", "-b"]
+FROM ubuntu:latest
+LABEL authors="arrismanduma"
+ENTRYPOINT ["top", "-b"]
 # Use a lightweight Python base image
 FROM python:3.9-slim-buster
 
